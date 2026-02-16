@@ -1,6 +1,7 @@
 import time
 import csv
 import os
+import sys
 import pytz
 from datetime import datetime, timedelta
 from config import POLYMARKET_CONFIG
@@ -15,6 +16,18 @@ MARKET_TOKEN_IDS = {
     "XRP": {"UP": "none"},
     "BTC5": {"UP": "none"},  # BTC 5分钟周期
 }
+
+# 用于跟踪连续获取 none 的次数
+none_counter = {
+    "BTC": 0,
+    "ETH": 0,
+    "SOL": 0,
+    "XRP": 0,
+    "BTC5": 0,
+}
+
+# 连续 none 的阈值（15秒=15次）
+MAX_NONE_COUNT = 15
 
 
 # ======================== 客户端初始化 ========================
@@ -135,6 +148,18 @@ def get_next_cycle_start():
     
     return next_cycle_start
 
+# 重启脚本
+def restart_script():
+    """重启当前脚本"""
+    print("\n" + "=" * 50)
+    print("检测到连续15秒获取价格失败，正在重启脚本...")
+    print("=" * 50)
+    time.sleep(2)  # 等待2秒让消息显示
+    
+    # 重启当前Python脚本
+    python = sys.executable
+    os.execl(python, python, *sys.argv)
+
 # 主监控循环
 def main_loop():
     """主监控循环 - 每秒执行一次"""
@@ -151,6 +176,21 @@ def main_loop():
             price_str = get_price_sync(tokens["UP"])
             print(f"  {coin}: {price_str}")
             save_to_csv(coin, timestamp, price_str)
+            
+            # 更新 none 计数器
+            if price_str == "none":
+                none_counter[coin] += 1
+                print(f"    ⚠️ {coin} 连续 {none_counter[coin]} 秒获取失败")
+                
+                # 检查是否达到重启阈值
+                if none_counter[coin] >= MAX_NONE_COUNT:
+                    print(f"    ✗ {coin} 连续 {none_counter[coin]} 秒获取失败，触发重启！")
+                    restart_script()
+            else:
+                # 价格正常，重置计数器
+                if none_counter[coin] > 0:
+                    print(f"    ✓ {coin} 恢复正常，重置计数器")
+                none_counter[coin] = 0
         
         print("-" * 30)
         
