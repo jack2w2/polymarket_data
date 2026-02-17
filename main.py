@@ -31,8 +31,6 @@ MAX_NONE_COUNT = 15
 
 
 # ======================== 客户端初始化 ========================
-GAMMA_API = "https://gamma-api.polymarket.com"
-DATA_API = "https://data-api.polymarket.com"
 CLOB_API = "https://clob.polymarket.com"
 client = ClobClient(
     CLOB_API,
@@ -48,18 +46,27 @@ client.set_api_creds(creds)
 # 保存数据到CSV文件
 def save_to_csv(coin: str, timestamp: str, price_str: str):
     """将数据保存到对应的CSV文件"""
+    # 生成日期信息
+    date_str = timestamp.split()[0]  # 提取日期部分（YYYY-MM-DD）
+    month_str = date_str[:7]  # YYYY-MM
+
+    # 创建目录结构：data/YYYY-MM/YYYY-MM-DD
+    data_dir = os.path.join("data", month_str, date_str)
+    os.makedirs(data_dir, exist_ok=True)
+
     # 生成文件名（按日期）
-    date_str = timestamp.split()[0]  # 提取日期部分
     # BTC5使用不同的文件名前缀以避免混淆
     if coin == "BTC5":
         filename = f"BTC5MIN_{date_str}.csv"
     else:
         filename = f"{coin}_{date_str}.csv"
+
+    file_path = os.path.join(data_dir, filename)
     
     # 检查文件是否存在，如果不存在则写入表头
-    file_exists = os.path.exists(filename)
+    file_exists = os.path.exists(file_path)
     
-    with open(filename, 'a', newline='', encoding='utf-8') as csvfile:
+    with open(file_path, 'a', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         # 如果是新文件，写入表头
         if not file_exists:
@@ -76,7 +83,13 @@ def get_price_sync(token_id: str) -> str:
     try:
         # 使用客户端的官方方法获取价格
         midpoint_data = client.get_midpoint(token_id)
-        mid_price = float(midpoint_data.get('midpoint', 0)) or float(midpoint_data.get('mid', 0))
+        mid_price = 0.0
+
+        if isinstance(midpoint_data, dict):
+            midpoint_value = midpoint_data.get('midpoint', 0) or midpoint_data.get('mid', 0)
+            mid_price = float(midpoint_value or 0)
+        elif isinstance(midpoint_data, (int, float, str)):
+            mid_price = float(midpoint_data)
         
         if mid_price > 0:
             return f"{mid_price:.2f}"
