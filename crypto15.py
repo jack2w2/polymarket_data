@@ -16,6 +16,9 @@ MARKET_TOKEN_IDS = {
     "SOL": {"UP": "none"},
     "XRP": {"UP": "none"},
     "BTC5": {"UP": "none"},  # BTC 5分钟周期
+    "ETH5": {"UP": "none"},  # ETH 5分钟周期
+    "SOL5": {"UP": "none"},  # SOL 5分钟周期
+    "XRP5": {"UP": "none"},  # XRP 5分钟周期
 }
 
 
@@ -86,8 +89,8 @@ def get_15m_cycle_start_ts(offset_minutes: int = 0) -> int:
     return int(adjusted.astimezone(pytz.utc).timestamp())
 
 
-def cached_fetch_5m_market_token_id(cache_key: int) -> Optional[Dict[str, str]]:
-    full_key = f"BTC5_{cache_key}"
+def cached_fetch_5m_market_token_id(coin: str, cache_key: int) -> Optional[Dict[str, str]]:
+    full_key = f"{coin}5_{cache_key}"
     return _INTERNAL_CACHE.get(full_key)
 
 
@@ -98,13 +101,18 @@ def cached_fetch_15m_market_token_ids(coin: str, cache_key: int) -> Optional[Dic
     return _INTERNAL_CACHE.get(full_key)
 
 
-def fetch_5m_market_token_id(max_retries: int = 3, base_delay: float = 2.0) -> Optional[Dict[str, str]]:
+def fetch_5m_market_token_id(
+        coin: str = "BTC", max_retries: int = 3, base_delay: float = 2.0
+) -> Optional[Dict[str, str]]:
     """
-    获取BTC 5分钟 Up市场 token_id
+    获取指定币种 5分钟 Up 市场 token_id
     """
+    coin = coin.upper()
+    coin_lower = coin.lower()
+
     # 1. 检查缓存 (基于当前周期时间戳)
     current_cycle_ts = get_5m_cycle_start_ts(0)
-    cache_key = f"BTC5_{current_cycle_ts}"
+    cache_key = f"{coin}5_{current_cycle_ts}"
 
     if cache_key in _INTERNAL_CACHE:
         # print(f"[BTC5] 使用内部缓存") # 调试用，可注释
@@ -115,7 +123,7 @@ def fetch_5m_market_token_id(max_retries: int = 3, base_delay: float = 2.0) -> O
 
     for offset_min in offsets:
         ts = get_5m_cycle_start_ts(offset_min)
-        slug = f"btc-updown-5m-{ts}"
+        slug = f"{coin_lower}-updown-5m-{ts}"
         url = "https://gamma-api.polymarket.com/markets"
         params = {"slug": slug}
 
@@ -154,7 +162,7 @@ def fetch_5m_market_token_id(max_retries: int = 3, base_delay: float = 2.0) -> O
                     "question": question,
                 }
 
-                print(f"[BTC5] 获取成功（偏移 {offset_min}min）：{question[:40]}...")
+                print(f"[{coin}5] 获取成功（偏移 {offset_min}min）：{question[:40]}...")
 
                 # 更新缓存：只缓存当前或未来周期的结果，过期数据不缓存
                 if offset_min >= 0:
@@ -167,7 +175,7 @@ def fetch_5m_market_token_id(max_retries: int = 3, base_delay: float = 2.0) -> O
             # 为了不刷屏，仅在最后一次尝试失败时打印详细信息
             continue
 
-    print(f"[BTC5] 所有尝试失败")
+    print(f"[{coin}5] 所有尝试失败")
     return None
 
 
@@ -263,20 +271,59 @@ def fetch_15m_market_token_ids(
 
 def update_btc5_token_id(market_token_ids: Dict[str, Dict[str, str]]) -> bool:
     """
-    更新BTC 5分钟 token_id
+    兼容旧调用：更新 BTC5 token_id
+    """
+    return update_single_5m_token_id(market_token_ids, "BTC5")
+
+
+def update_single_5m_token_id(market_token_ids: Dict[str, Dict[str, str]], coin_key: str) -> bool:
+    """
+    更新单个 5分钟 token_id（如 BTC5 / ETH5 / SOL5 / XRP5）
     """
     try:
-        info = fetch_5m_market_token_id()
+        if not coin_key.endswith("5"):
+            return False
+
+        base_coin = coin_key[:-1]
+        info = fetch_5m_market_token_id(base_coin)
         if info and "UP" in info:
-            market_token_ids["BTC5"]["UP"] = info["UP"]
-            # print(f"[BTC5] 更新内存成功")
+            market_token_ids[coin_key]["UP"] = info["UP"]
             return True
         else:
-            # 不打印失败信息，让fetch_5m_market_token_id函数处理错误提示
             return False
     except Exception as e:
-        # 不打印异常信息，避免刷屏
         return False
+
+
+def update_all_5m_token_ids(market_token_ids: Dict[str, Dict[str, str]]) -> int:
+    """
+    并行更新所有 5分钟键（*5）token_id，返回成功数量
+    """
+    updated_count = 0
+    five_min_keys = [k for k in market_token_ids.keys() if k.endswith("5")]
+
+    if not five_min_keys:
+        return 0
+
+    with ThreadPoolExecutor(max_workers=len(five_min_keys)) as executor:
+        future_to_coin_key = {
+            executor.submit(update_single_5m_token_id, market_token_ids, coin_key): coin_key
+            for coin_key in five_min_keys
+        }
+
+        for future in as_completed(future_to_coin_key):
+            coin_key = future_to_coin_key[future]
+            try:
+                ok = future.result()
+                if ok:
+                    updated_count += 1
+                else:
+                    print(f"[{coin_key}] 更新失败，保持旧值")
+            except Exception as e:
+                print(f"[{coin_key}] 更新线程异常: {str(e)[:80]}")
+
+    print(f"5分钟 token 更新完成：成功 {updated_count}/{len(five_min_keys)} 个")
+    return updated_count
 
 
 def update_all_token_ids(market_token_ids: Dict[str, Dict[str, str]]) -> int:
@@ -285,7 +332,10 @@ def update_all_token_ids(market_token_ids: Dict[str, Dict[str, str]]) -> int:
     保持原有函数签名完全一致
     """
     updated_count = 0
-    coins = list(market_token_ids.keys())  # 动态获取键，防止硬编码错误
+    coins = [k for k in market_token_ids.keys() if not k.endswith("5")]  # 仅15分钟键
+
+    if not coins:
+        return 0
 
     # 使用线程池并发
     with ThreadPoolExecutor(max_workers=len(coins)) as executor:
@@ -308,18 +358,26 @@ def update_all_token_ids(market_token_ids: Dict[str, Dict[str, str]]) -> int:
             except Exception as e:
                 print(f"[{coin}] 更新线程异常: {str(e)[:80]}")
 
-    print(f"token 更新完成：成功 {updated_count}/{len(coins)} 个")
+    print(f"15分钟 token 更新完成：成功 {updated_count}/{len(coins)} 个")
     return updated_count
 
 
 # 主入口（保持不变，方便测试）
 if __name__ == "__main__":
     print(f"开始更新所有 Up/Down token IDs ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})...")
-    success_count = update_all_token_ids(MARKET_TOKEN_IDS)
-    print(f"更新结束，成功 {success_count} 个币种")
+    success_count_15m = update_all_token_ids(MARKET_TOKEN_IDS)
+    success_count_5m = update_all_5m_token_ids(MARKET_TOKEN_IDS)
+    print(f"更新结束，15分钟成功 {success_count_15m} 个币种，5分钟成功 {success_count_5m} 个币种")
 
     # 打印最终结果
     print("\n最终 MARKET_TOKEN_IDS:")
     for coin, tokens in MARKET_TOKEN_IDS.items():
-        print(f"[{coin}] UP: {tokens['UP'][:12]}... | DOWN: {tokens['DOWN'][:12]}...")
+        up_val = tokens.get("UP", "none")
+        down_val = tokens.get("DOWN")
+        up_show = f"{up_val[:12]}..." if isinstance(up_val, str) and len(up_val) > 12 else str(up_val)
+        if down_val is not None:
+            down_show = f"{down_val[:12]}..." if isinstance(down_val, str) and len(down_val) > 12 else str(down_val)
+            print(f"[{coin}] UP: {up_show} | DOWN: {down_show}")
+        else:
+            print(f"[{coin}] UP: {up_show}")
     

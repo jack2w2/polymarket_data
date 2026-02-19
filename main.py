@@ -6,7 +6,7 @@ import pytz
 from datetime import datetime, timedelta
 from config import POLYMARKET_CONFIG
 from py_clob_client.client import ClobClient
-from crypto15 import update_all_token_ids, update_btc5_token_id
+from crypto15 import update_all_token_ids, update_all_5m_token_ids
 
 # 全局变量
 MARKET_TOKEN_IDS = {
@@ -15,6 +15,9 @@ MARKET_TOKEN_IDS = {
     "SOL": {"UP": "none"},
     "XRP": {"UP": "none"},
     "BTC5": {"UP": "none"},  # BTC 5分钟周期
+    "ETH5": {"UP": "none"},  # ETH 5分钟周期
+    "SOL5": {"UP": "none"},  # SOL 5分钟周期
+    "XRP5": {"UP": "none"},  # XRP 5分钟周期
 }
 
 # 用于跟踪连续获取 none 的次数
@@ -24,6 +27,9 @@ none_counter = {
     "SOL": 0,
     "XRP": 0,
     "BTC5": 0,
+    "ETH5": 0,
+    "SOL5": 0,
+    "XRP5": 0,
 }
 
 # 连续 none 的阈值（15秒=15次）
@@ -55,9 +61,9 @@ def save_to_csv(coin: str, timestamp: str, price_str: str):
     os.makedirs(data_dir, exist_ok=True)
 
     # 生成文件名（按日期）
-    # BTC5使用不同的文件名前缀以避免混淆
-    if coin == "BTC5":
-        filename = f"BTC5MIN_{date_str}.csv"
+    # 5分钟市场使用不同的文件名前缀以避免混淆
+    if coin.endswith("5"):
+        filename = f"{coin}MIN_{date_str}.csv"
     else:
         filename = f"{coin}_{date_str}.csv"
 
@@ -240,7 +246,7 @@ def update_tokens_thread():
         # 检查是否需要更新5分钟周期
         if abs((next_update - next_5m_cycle).total_seconds()) < 1:  # 允许1秒误差
             print("执行5分钟周期更新...")
-            update_btc5_token_id(MARKET_TOKEN_IDS)
+            update_all_5m_token_ids(MARKET_TOKEN_IDS)
             print("5分钟周期更新完成")
         
         print("更新完成")
@@ -251,7 +257,7 @@ def main():
     # 初始化15分钟周期token_id
     update_all_token_ids(MARKET_TOKEN_IDS)
     # 初始化5分钟周期token_id
-    update_btc5_token_id(MARKET_TOKEN_IDS)
+    update_all_5m_token_ids(MARKET_TOKEN_IDS)
     print("初始化完成")
     print("=" * 50)
     
