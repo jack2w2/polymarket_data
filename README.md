@@ -48,14 +48,38 @@ pip install -r requirements.txt
 
 ## 3. 配置
 
-当前配置文件是 `config.py`，核心参数：
-- `FUNDER_ADDRESS`
-- `PRIVATE_KEY`
-- `SIGNATURE_TYPE`
+当前配置使用 `.env` 文件（已由 `python-dotenv` 自动加载）。
 
-运行前请确认以上值有效。
+1) 复制示例文件：
 
-> 安全建议：不要在公开仓库中提交真实私钥，建议改成从环境变量读取。
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+2) 编辑 `.env` 并填写：
+- `POLYMARKET_FUNDER_ADDRESS`
+- `POLYMARKET_PRIVATE_KEY`
+- `POLYMARKET_SIGNATURE_TYPE`
+- `POLYMARKET_DATA_TIMEZONE`（默认 `Asia/Shanghai`）
+- `ENABLE_POLYMARKET`（默认 `1`，设为 `0` 可关闭 Polymarket 采集）
+- `ENABLE_BINANCE`（默认 `1`，设为 `0` 可关闭币安采集）
+
+仅收集币安秒级价格时，建议在 `.env` 设置：
+
+```env
+ENABLE_POLYMARKET=0
+ENABLE_BINANCE=1
+```
+
+这样无需填写 Polymarket 密钥配置也可运行。
+
+> `.env` 已在 `.gitignore` 中，默认不会上传到 GitHub。
 
 ---
 
@@ -69,6 +93,13 @@ python main.py
 - 初始化 15 分钟和 5 分钟市场的 token_id
 - 每秒拉取价格
 - 自动按日期写入 `data/YYYY-MM/YYYY-MM-DD/*.csv`
+- 同时每秒拉取币安现货 `BTC/ETH/SOL/XRP` 并写入：
+  - `data/YYYY-MM/YYYY-MM-DD/BTC_BINANCE_YYYY-MM-DD.csv`
+  - `data/YYYY-MM/YYYY-MM-DD/ETH_BINANCE_YYYY-MM-DD.csv`
+  - `data/YYYY-MM/YYYY-MM-DD/SOL_BINANCE_YYYY-MM-DD.csv`
+  - `data/YYYY-MM/YYYY-MM-DD/XRP_BINANCE_YYYY-MM-DD.csv`
+
+币安 CSV 固定为两列：`time,price`。
 
 停止程序：
 - 按 `Ctrl + C`
